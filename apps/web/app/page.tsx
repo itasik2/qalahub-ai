@@ -3,8 +3,28 @@
 import { FormEvent, useState } from "react";
 
 type Source = { title: string; url: string };
-type ChatMessage = { role: "user" | "assistant"; text: string; sources?: Source[] };
-type ChatReply = { answer?: string; sources?: Source[]; error?: string };
+type Citation = { startIndex: number; endIndex: number; url: string; title: string };
+type ChatMessage = { role: "user" | "assistant"; text: string; sources?: Source[]; citations?: Citation[] };
+type ChatReply = { answer?: string; sources?: Source[]; citations?: Citation[]; error?: string };
+
+function renderCitedText(text: string, citations: Citation[] = []) {
+  const chunks: React.ReactNode[] = [];
+  let cursor = 0;
+  const sorted = [...citations].sort((a, b) => a.startIndex - b.startIndex);
+  for (const citation of sorted) {
+    const { startIndex: start, endIndex: end, url, title } = citation;
+    if (!Number.isInteger(start) || !Number.isInteger(end) ||
+        start < cursor || end <= start || end > text.length || !/^https?:\/\//.test(url)) continue;
+    chunks.push(text.slice(cursor, start));
+    chunks.push(<a className="inline-citation" key={start + ":" + end + ":" + url}
+      href={url} target="_blank" rel="noopener noreferrer" title={title}>
+      {text.slice(start, end)}
+    </a>);
+    cursor = end;
+  }
+  chunks.push(text.slice(cursor));
+  return chunks;
+}
 
 const cities = [
   "Астана", "Алматы", "Шымкент", "Павлодар", "Караганда",
@@ -75,6 +95,7 @@ export default function HomePage() {
         role: "assistant",
         text: result.answer ?? "",
         sources: result.sources ?? [],
+        citations: result.citations ?? [],
       }]);
     } catch (reason) {
       setMessages((previous) => previous.slice(0, -1));
@@ -186,7 +207,7 @@ export default function HomePage() {
                 <div className={"message " + message.role} key={index}>
                   {message.role === "assistant" && <span className="message-avatar">✳</span>}
                   <div className="message-content">
-                    <div className="bubble">{message.text}</div>
+                    <div className="bubble">{message.role === "assistant" ? renderCitedText(message.text, message.citations) : message.text}</div>
                     {message.role === "assistant" && message.sources && message.sources.length > 0 && (
                       <div className="source-box">
                         <span className="source-heading">ИСТОЧНИКИ</span>
@@ -199,6 +220,11 @@ export default function HomePage() {
                             className="source-link"
                           >↗ {source.title}</a>
                         ))}
+                      </div>
+                    )}
+                    {message.role === "assistant" && (!message.sources || message.sources.length === 0) && (
+                      <div className="source-warning" role="note">
+                        Не получены ссылки на подтверждающие источники. Проверяйте даты, адреса и цены самостоятельно.
                       </div>
                     )}
                   </div>
