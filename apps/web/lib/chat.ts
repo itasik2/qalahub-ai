@@ -17,7 +17,7 @@ export function parseChatPayload(input: unknown): ChatPayload {
   const city = typeof body.city === "string" ? body.city.trim() : "";
   const accessCode = typeof body.accessCode === "string" ? body.accessCode : "";
 
-  if (!city || city.length > 70 || !/^[\p{L}\s.'-]+$/u.test(city)) {
+  if (!city || city.length > 70 || !/^[\p{L} .'-]+$/u.test(city)) {
     throw new ChatInputError("Укажите корректный город Казахстана.");
   }
   if (accessCode.length > 200) {
@@ -36,14 +36,14 @@ export function parseChatPayload(input: unknown): ChatPayload {
     if (value.role !== "user" && value.role !== "assistant") {
       throw new ChatInputError("Некорректная роль сообщения.");
     }
-    if (typeof value.content !== "string" || !value.content.trim() || value.content.length > 1400) {
+    if (typeof value.content !== "string" || !value.content.trim() || value.content.length > (value.role === "assistant" ? 3500 : 1400)) {
       throw new ChatInputError("Сообщение должно содержать от 1 до 1400 символов.");
     }
     total += value.content.length;
     return { role: value.role, content: value.content.trim() };
   });
 
-  if (total > 6000 || messages[messages.length - 1]?.role !== "user") {
+  if (total > 16000 || messages[messages.length - 1]?.role !== "user") {
     throw new ChatInputError("Слишком длинный или некорректный диалог.");
   }
   return { city, accessCode, messages };

@@ -63,7 +63,7 @@ export default function HomePage() {
           accessCode,
           messages: next.slice(-8).map((message) => ({
             role: message.role,
-            content: message.text,
+            content: message.text.slice(0, message.role === "assistant" ? 3000 : 1400),
           })),
         }),
       });
@@ -77,6 +77,7 @@ export default function HomePage() {
         sources: result.sources ?? [],
       }]);
     } catch (reason) {
+      setMessages((previous) => previous.slice(0, -1));
       setError(reason instanceof Error ? reason.message : "Что-то пошло не так.");
       setText(query);
     } finally {

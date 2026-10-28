@@ -29,7 +29,7 @@ function sameSecret(given: string, expected: string): boolean {
 export async function POST(request: NextRequest) {
   let payload;
   try {
-    if (Number(request.headers.get("content-length") || "0") > 16000) {
+    if (Number(request.headers.get("content-length") || "0") > 26000) {
       return NextResponse.json({ error: "Слишком большой запрос." }, { status: 413 });
     }
     payload = parseChatPayload(await request.json());
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-        instructions: SYSTEM_PROMPT + " Текущий город: " + payload.city + ", Казахстан. Текущая дата (UTC): " + new Date().toISOString() + ".",
+        instructions: SYSTEM_PROMPT + " Текущий город: " + payload.city + ", Казахстан. Местная дата и время: " + new Intl.DateTimeFormat("ru-RU", { timeZone: "Asia/Almaty", dateStyle: "full", timeStyle: "short" }).format(new Date()) + ".",
         input: payload.messages,
         tools: [{ type: "web_search", search_context_size: "medium" }],
         tool_choice: "required",
