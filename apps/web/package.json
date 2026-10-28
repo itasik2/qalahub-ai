@@ -1,0 +1,24 @@
+{
+  "name": "@qalahub-ai/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test lib/*.test.ts"
+  },
+  "dependencies": {
+    "next": "15.5.28",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.6.3",
+    "tsx": "^4.20.3"
+  }
+}
