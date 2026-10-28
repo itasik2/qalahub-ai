@@ -1,0 +1,16 @@
+{
+  "name": "qalahub-ai",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @qalahub-ai/web",
+    "build": "npm run build -w @qalahub-ai/web",
+    "typecheck": "npm run typecheck -w @qalahub-ai/web",
+    "test": "npm run test -w @qalahub-ai/web"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
