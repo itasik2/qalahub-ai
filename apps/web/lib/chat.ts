@@ -19,7 +19,7 @@ export function parseChatPayload(input: unknown): ChatPayload {
   const city = typeof body.city === "string" ? body.city.trim() : "";
   const accessCode = typeof body.accessCode === "string" ? body.accessCode : "";
 
-  if (!isKazakhstanCity(city)) {L} .'-]+$/u.test(city)) {
+  if (!isKazakhstanCity(city)) {
     throw new ChatInputError("Укажите корректный город Казахстана.");
   }
   if (accessCode.length > 200) {
