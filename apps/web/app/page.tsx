@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { KZ_CITIES } from "../lib/cities";
 import { tokenizeAssistantText } from "../lib/answer-format";
+import { groupChatTurns, summarizeQuestion } from "../lib/chat-history";
 
 type Source = { title: string; url: string };
 type Citation = { startIndex: number; endIndex: number; url: string; title: string };
@@ -18,6 +19,38 @@ function renderAssistantText(text: string) {
     if (part.type === "strong") return <strong key={index}>{part.text}</strong>;
     return <span key={index}>{part.text}</span>;
   });
+}
+
+function ChatMessageView({ message }: { message: ChatMessage }) {
+  return (
+    <div className={"message " + message.role}>
+      {message.role === "assistant" && <span className="message-avatar">✳</span>}
+      <div className="message-content">
+        <div className="bubble">
+          {message.role === "assistant" ? renderAssistantText(message.text) : message.text}
+        </div>
+        {message.role === "assistant" && message.sources && message.sources.length > 0 && (
+          <div className="source-box">
+            <span className="source-heading">ИСТОЧНИКИ</span>
+            {message.sources.map((source) => (
+              <a
+                key={source.url}
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="source-link"
+              >↗ {source.title}</a>
+            ))}
+          </div>
+        )}
+        {message.role === "assistant" && (!message.sources || message.sources.length === 0) && (
+          <div className="source-warning" role="note">
+            Не получены ссылки на подтверждающие источники. Проверяйте даты, адреса и цены самостоятельно.
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const suggestions = [
@@ -46,19 +79,44 @@ export default function HomePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(false);
   const chatRef = useRef<HTMLElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
 
+  const turns = groupChatTurns(messages);
+  const previousTurns = turns.slice(0, -1);
+  const currentTurn = turns[turns.length - 1];
+
+  // New questions and answers stay at the start of the visible conversation
+  // instead of being pushed out of sight by earlier long answers.
   useEffect(() => {
-    if (chatMessagesRef.current) {
-      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
-    }
-  }, [messages, pending]);
+    if (historyOpen || messages.length === 0) return;
+    const frame = requestAnimationFrame(() => {
+      if (chatMessagesRef.current) chatMessagesRef.current.scrollTop = 0;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [messages, pending, historyOpen]);
+
+  useEffect(() => {
+    if (!chatExpanded) return;
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setChatExpanded(false);
+    };
+    window.addEventListener("keydown", onEscape);
+    return () => {
+      document.body.style.overflow = oldOverflow;
+      window.removeEventListener("keydown", onEscape);
+    };
+  }, [chatExpanded]);
 
   function chooseCity(nextCity: string) {
     setCity(nextCity);
     setMessages([]);
+    setHistoryOpen(false);
     setText("");
     setError("");
   }
@@ -85,6 +143,7 @@ export default function HomePage() {
     }
 
     setPending(true);
+    setHistoryOpen(false);
     setError("");
     setText("");
     const turn: ChatMessage = { role: "user", text: query };
@@ -196,7 +255,16 @@ export default function HomePage() {
           </p>
         </section>
 
-        <section className="chat" ref={chatRef} aria-label="Диалог с QalaHub AI">
+        {chatExpanded && (
+          <button
+            className="chat-backdrop"
+            type="button"
+            aria-label="Закрыть расширенный чат"
+            onClick={() => setChatExpanded(false)}
+          />
+        )}
+        <section className={"chat" + (chatExpanded ? " chat-expanded" : "")}
+          ref={chatRef} aria-label="Диалог с QalaHub AI">
           <div className="chat-header">
             <div className="agent-avatar">✳</div>
             <div className="agent-heading">
@@ -204,6 +272,14 @@ export default function HomePage() {
               <span>Городской помощник</span>
             </div>
             <span className="chat-badge">Веб-поиск</span>
+            <button
+              className="chat-expand-button"
+              type="button"
+              aria-pressed={chatExpanded}
+              onClick={() => setChatExpanded((value) => !value)}
+            >
+              {chatExpanded ? "↙ Свернуть" : "⤢ Развернуть"}
+            </button>
           </div>
 
           <div className="chat-messages" ref={chatMessagesRef} aria-live="polite" aria-relevant="additions">
@@ -218,39 +294,56 @@ export default function HomePage() {
                 </div>
               </div>
             ) : (
-              messages.map((message, index) => (
-                <div className={"message " + message.role} key={index}>
-                  {message.role === "assistant" && <span className="message-avatar">✳</span>}
-                  <div className="message-content">
-                    <div className="bubble">{message.role === "assistant" ? renderAssistantText(message.text) : message.text}</div>
-                    {message.role === "assistant" && message.sources && message.sources.length > 0 && (
-                      <div className="source-box">
-                        <span className="source-heading">ИСТОЧНИКИ</span>
-                        {message.sources.map((source) => (
-                          <a
-                            key={source.url}
-                            href={source.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="source-link"
-                          >↗ {source.title}</a>
+              <>
+                {previousTurns.length > 0 && (
+                  <div className="chat-history">
+                    <button
+                      className="chat-history-toggle"
+                      type="button"
+                      aria-expanded={historyOpen}
+                      onClick={() => setHistoryOpen((value) => !value)}
+                    >
+                      <span>▤ История диалога</span>
+                      <span className="history-count">
+                        {previousTurns.length} {previousTurns.length === 1 ? "предыдущий запрос" : "предыдущих запросов"}
+                        <span aria-hidden="true">{historyOpen ? "⌃" : "⌄"}</span>
+                      </span>
+                    </button>
+                    {historyOpen && (
+                      <div className="history-list">
+                        {previousTurns.map((turn, index) => (
+                          <details className="history-item" key={index}>
+                            <summary>
+                              <span className="history-number">{index + 1}</span>
+                              <span className="history-question">{summarizeQuestion(turn.question.text)}</span>
+                              <span className="history-chevron" aria-hidden="true">⌄</span>
+                            </summary>
+                            <div className="history-turn-messages">
+                              <ChatMessageView message={turn.question} />
+                              {turn.answer && <ChatMessageView message={turn.answer} />}
+                            </div>
+                          </details>
                         ))}
                       </div>
                     )}
-                    {message.role === "assistant" && (!message.sources || message.sources.length === 0) && (
-                      <div className="source-warning" role="note">
-                        Не получены ссылки на подтверждающие источники. Проверяйте даты, адреса и цены самостоятельно.
+                  </div>
+                )}
+                {currentTurn && (
+                  <div className="current-turn">
+                    <div className="current-turn-heading">Последний запрос</div>
+                    <ChatMessageView message={currentTurn.question} />
+                    {currentTurn.answer && <ChatMessageView message={currentTurn.answer} />}
+                    {pending && (
+                      <div className="message assistant">
+                        <span className="message-avatar">✳</span>
+                        <div className="loading-bubble">
+                          <span /><span /><span /> Ищу актуальную информацию…
+                        </div>
                       </div>
                     )}
                   </div>
-                </div>
-              ))
-            )}
-            {pending && (
-              <div className="message assistant">
-                <span className="message-avatar">✳</span>
-                <div className="loading-bubble"><span /><span /><span /> Ищу актуальную информацию…</div>
-              </div>
+                )}
+              </>
             )}
           </div>
 
