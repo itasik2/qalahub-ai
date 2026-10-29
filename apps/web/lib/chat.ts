@@ -1,3 +1,5 @@
+import { isKazakhstanCity } from "./cities";
+
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 export type ChatPayload = { city: string; accessCode: string; messages: ChatTurn[] };
 
@@ -17,7 +19,7 @@ export function parseChatPayload(input: unknown): ChatPayload {
   const city = typeof body.city === "string" ? body.city.trim() : "";
   const accessCode = typeof body.accessCode === "string" ? body.accessCode : "";
 
-  if (!city || city.length > 70 || !/^[\p{L} .'-]+$/u.test(city)) {
+  if (!isKazakhstanCity(city)) {L} .'-]+$/u.test(city)) {
     throw new ChatInputError("Укажите корректный город Казахстана.");
   }
   if (accessCode.length > 200) {
