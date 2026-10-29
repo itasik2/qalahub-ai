@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ChatInputError, parseChatPayload } from "../../../lib/chat";
 import { parseAgentAnswer } from "../../../lib/openai-response";
 import { buildAgentInstructions, createCitySearchTool, getResponseUsage } from "../../../lib/agent-request";
+import { validateLocalDiscovery } from "../../../lib/location-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +47,15 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
         instructions: buildAgentInstructions(payload.city, new Date()),
-        input: payload.messages,
+        input: [
+          ...payload.messages.slice(0, -1),
+          {
+            role: "user",
+            content: payload.messages[payload.messages.length - 1].content
+              + "\n\nГород поиска для этого вопроса: " + payload.city
+              + ", Казахстан. Не предлагай мероприятия или места других городов.",
+          },
+        ],
         tools: [createCitySearchTool(payload.city)],
         tool_choice: "required",
         max_output_tokens: 1100,
@@ -63,6 +72,24 @@ export async function POST(request: NextRequest) {
 
     const upstreamPayload: unknown = await upstream.json();
     const result = parseAgentAnswer(upstreamPayload);
+    const validation = validateLocalDiscovery(
+      payload.city,
+      payload.messages[payload.messages.length - 1].content,
+      result,
+    );
+    if (!validation.valid) {
+      // Reject mixed-city recommendations rather than presenting false local data.
+      console.warn("qalahub.chat.geography_rejected", {
+        city: payload.city,
+        conflictingCityCount: validation.conflictingCities.length,
+        missingSources: validation.missingSources,
+      });
+      return NextResponse.json({
+        error: validation.conflictingCities.length
+          ? "В поиске обнаружены результаты других городов. Я не буду выдавать их за мероприятия выбранного города. Попробуйте запрос ещё раз."
+          : "Не нашлось проверяемых источников по выбранному городу. Уточните запрос или повторите поиск.",
+      }, { status: 422, headers: { "Cache-Control": "no-store" } });
+    }
     const usage = getResponseUsage(upstreamPayload);
     // Metrics only; never log user questions, access codes or source URLs.
     if (usage) console.info("qalahub.chat.usage", {
