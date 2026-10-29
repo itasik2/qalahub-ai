@@ -343,17 +343,7 @@ export default function HomePage() {
                     )}
                   </div>
                 )}
-              </>}
-                      </div>
-                    )}
-                    {message.role === "assistant" && (!message.sources || message.sources.length === 0) && (
-                      <div className="source-warning" role="note">
-                        Не получены ссылки на подтверждающие источники. Проверяйте даты, адреса и цены самостоятельно.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
+              </>
             )}
           </div>
 

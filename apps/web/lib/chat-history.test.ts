@@ -43,6 +43,6 @@ test("ignores orphaned assistant messages and preserves message metadata", () =>
 
 test("summarizes old questions without modifying originals", () => {
   const text = "Где в Астане поужинать вдвоём с бюджетом 10000 тенге?";
-  assert.equal(summarizeQuestion(text, 17), "Где в Астане по…");
+  assert.equal(summarizeQuestion(text, 17), "Где в Астане поу…");
   assert.equal(summarizeQuestion("   Новый  запрос  "), "Новый запрос");
 });
