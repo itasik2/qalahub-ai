@@ -95,3 +95,7 @@ a{color:inherit;text-decoration:none}
 .inline-citation{color:#267c50;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;font-weight:650}
 .inline-citation:hover{color:#145332}
 .source-warning{font-size:12px;line-height:1.5;color:#825b22;background:#fff8e9;padding:11px 12px;border-radius:11px;margin-top:10px}
+
+.city-control select{width:165px;background:#fff;border:1px solid #d7e2dc;border-radius:12px;padding:12px;color:#17303b;font-weight:650;outline-color:#a3d876;cursor:pointer}
+@media(max-width:520px){.city-control select{width:135px;padding:9px 6px;font-size:12px}}
+.suggestion:focus-visible,.city-control select:focus-visible{outline:3px solid #5d9a61;outline-offset:3px}
