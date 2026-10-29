@@ -1,35 +1,24 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { KZ_CITIES } from "../lib/cities";
+import { tokenizeAssistantText } from "../lib/answer-format";
 
 type Source = { title: string; url: string };
 type Citation = { startIndex: number; endIndex: number; url: string; title: string };
 type ChatMessage = { role: "user" | "assistant"; text: string; sources?: Source[]; citations?: Citation[] };
 type ChatReply = { answer?: string; sources?: Source[]; citations?: Citation[]; error?: string };
 
-function renderCitedText(text: string, citations: Citation[] = []) {
-  const chunks: React.ReactNode[] = [];
-  let cursor = 0;
-  const sorted = [...citations].sort((a, b) => a.startIndex - b.startIndex);
-  for (const citation of sorted) {
-    const { startIndex: start, endIndex: end, url, title } = citation;
-    if (!Number.isInteger(start) || !Number.isInteger(end) ||
-        start < cursor || end <= start || end > text.length || !/^https?:\/\//.test(url)) continue;
-    chunks.push(text.slice(cursor, start));
-    chunks.push(<a className="inline-citation" key={start + ":" + end + ":" + url}
-      href={url} target="_blank" rel="noopener noreferrer" title={title}>
-      {text.slice(start, end)}
-    </a>);
-    cursor = end;
-  }
-  chunks.push(text.slice(cursor));
-  return chunks;
+function renderAssistantText(text: string) {
+  return tokenizeAssistantText(text).map((part, index) => {
+    if (part.type === "link") {
+      return <a className="inline-citation" key={index} href={part.url}
+        target="_blank" rel="noopener noreferrer">{part.text}</a>;
+    }
+    if (part.type === "strong") return <strong key={index}>{part.text}</strong>;
+    return <span key={index}>{part.text}</span>;
+  });
 }
-
-const cities = [
-  "Астана", "Алматы", "Шымкент", "Павлодар", "Караганда",
-  "Актобе", "Атырау", "Актау", "Костанай", "Тараз", "Усть-Каменогорск",
-];
 
 const suggestions = [
   {
@@ -57,6 +46,35 @@ export default function HomePage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const chatRef = useRef<HTMLElement>(null);
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+    }
+  }, [messages, pending]);
+
+  function chooseCity(nextCity: string) {
+    setCity(nextCity);
+    setMessages([]);
+    setText("");
+    setError("");
+  }
+
+  function handleSuggestion(question: string) {
+    if (pending) return;
+    setText(question);
+    setError("");
+    chatRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (!accessCode.trim()) {
+      setError("Введите код пилотного доступа, чтобы запустить выбранный сценарий.");
+      codeRef.current?.focus();
+      return;
+    }
+    void ask(question);
+  }
 
   async function ask(question: string) {
     const query = question.trim();
@@ -123,16 +141,13 @@ export default function HomePage() {
             <span className="pilot-pill"><span className="live-dot" /> Пилот · Астана</span>
             <label className="city-control">
               <span>Ваш город</span>
-              <input
-                aria-label="Город Казахстана"
-                list="kz-cities"
+              <select
+                aria-label="Выберите город Казахстана"
                 value={city}
-                onChange={(event) => setCity(event.target.value)}
-                maxLength={70}
-              />
-              <datalist id="kz-cities">
-                {cities.map((item) => <option value={item} key={item} />)}
-              </datalist>
+                onChange={(event) => chooseCity(event.target.value)}
+              >
+                {KZ_CITIES.map((item) => <option value={item} key={item}>{item}</option>)}
+              </select>
             </label>
           </div>
         </div>
@@ -162,7 +177,7 @@ export default function HomePage() {
                 <button
                   key={item.type}
                   className={"suggestion " + item.style}
-                  onClick={() => void ask(item.text)}
+                  onClick={() => handleSuggestion(item.text)}
                   disabled={pending}
                   type="button"
                 >
@@ -181,7 +196,7 @@ export default function HomePage() {
           </p>
         </section>
 
-        <section className="chat" aria-label="Диалог с QalaHub AI">
+        <section className="chat" ref={chatRef} aria-label="Диалог с QalaHub AI">
           <div className="chat-header">
             <div className="agent-avatar">✳</div>
             <div className="agent-heading">
@@ -191,7 +206,7 @@ export default function HomePage() {
             <span className="chat-badge">Веб-поиск</span>
           </div>
 
-          <div className="chat-messages" aria-live="polite" aria-relevant="additions">
+          <div className="chat-messages" ref={chatMessagesRef} aria-live="polite" aria-relevant="additions">
             {messages.length === 0 ? (
               <div className="welcome">
                 <div className="welcome-icon">✳</div>
@@ -207,7 +222,7 @@ export default function HomePage() {
                 <div className={"message " + message.role} key={index}>
                   {message.role === "assistant" && <span className="message-avatar">✳</span>}
                   <div className="message-content">
-                    <div className="bubble">{message.role === "assistant" ? renderCitedText(message.text, message.citations) : message.text}</div>
+                    <div className="bubble">{message.role === "assistant" ? renderAssistantText(message.text) : message.text}</div>
                     {message.role === "assistant" && message.sources && message.sources.length > 0 && (
                       <div className="source-box">
                         <span className="source-heading">ИСТОЧНИКИ</span>
@@ -244,6 +259,7 @@ export default function HomePage() {
               <span>Код закрытого пилота</span>
               <input
                 type="password"
+                ref={codeRef}
                 value={accessCode}
                 autoComplete="off"
                 onChange={(event) => setAccessCode(event.target.value)}
