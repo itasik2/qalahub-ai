@@ -84,6 +84,8 @@ export default function HomePage() {
   const chatRef = useRef<HTMLElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
+  const requestIdRef = useRef(0);
+  const requestControllerRef = useRef<AbortController | null>(null);
 
   const turns = groupChatTurns(messages);
   const previousTurns = turns.slice(0, -1);
@@ -113,12 +115,22 @@ export default function HomePage() {
     };
   }, [chatExpanded]);
 
-  function chooseCity(nextCity: string) {
-    setCity(nextCity);
+  /** Clear this session without changing the selected city or pilot code. */
+  function clearChat() {
+    requestIdRef.current += 1;
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    setPending(false);
     setMessages([]);
-    setHistoryOpen(false);
     setText("");
     setError("");
+    setHistoryOpen(false);
+    if (chatMessagesRef.current) chatMessagesRef.current.scrollTop = 0;
+  }
+
+  function chooseCity(nextCity: string) {
+    clearChat();
+    setCity(nextCity);
   }
 
   function handleSuggestion(question: string) {
@@ -142,6 +154,9 @@ export default function HomePage() {
       return;
     }
 
+    const requestId = ++requestIdRef.current;
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
     setPending(true);
     setHistoryOpen(false);
     setError("");
@@ -155,6 +170,7 @@ export default function HomePage() {
         method: "POST",
         headers: { "content-type": "application/json" },
         cache: "no-store",
+        signal: controller.signal,
         body: JSON.stringify({
           city: city.trim(),
           accessCode,
@@ -165,6 +181,7 @@ export default function HomePage() {
         }),
       });
       const result = (await response.json()) as ChatReply;
+      if (requestId !== requestIdRef.current) return;
       if (!response.ok || !result.answer) {
         throw new Error(result.error || "Не удалось получить ответ.");
       }
@@ -175,11 +192,15 @@ export default function HomePage() {
         citations: result.citations ?? [],
       }]);
     } catch (reason) {
+      if (requestId !== requestIdRef.current) return;
       setMessages((previous) => previous.slice(0, -1));
       setError(reason instanceof Error ? reason.message : "Что-то пошло не так.");
       setText(query);
     } finally {
-      setPending(false);
+      if (requestId === requestIdRef.current) {
+        requestControllerRef.current = null;
+        setPending(false);
+      }
     }
   }
 
@@ -272,6 +293,16 @@ export default function HomePage() {
               <span>Городской помощник</span>
             </div>
             <span className="chat-badge">Веб-поиск</span>
+            <button
+              className="chat-clear-button"
+              type="button"
+              disabled={messages.length === 0 && !text && !error && !pending}
+              aria-label="Очистить переписку"
+              title="Удалить все сообщения этого диалога"
+              onClick={clearChat}
+            >
+              <span aria-hidden="true">↺</span> <span className="clear-label">Очистить</span>
+            </button>
             <button
               className="chat-expand-button"
               type="button"

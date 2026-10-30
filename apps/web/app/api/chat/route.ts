@@ -5,6 +5,7 @@ import { parseAgentAnswer } from "../../../lib/openai-response";
 import { buildAgentInstructions, createCitySearchTool, getResponseUsage } from "../../../lib/agent-request";
 import { filterLocalDiscovery, isLocalDiscoveryConversation } from "../../../lib/location-guard";
 import { collectSearchSourceUrls, countSourceMatches } from "../../../lib/source-evidence";
+import { enforceCelsius } from "../../../lib/temperature";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
       removedRecommendations: validation.removedRecommendations,
       removedSources: validation.removedSources,
     });
-    return NextResponse.json(validation.answer, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(enforceCelsius(validation.answer), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("QalaHub AI request failed:", error instanceof Error ? error.name : "Unknown error");
     return NextResponse.json({ error: "Не удалось получить ответ. Попробуйте ещё раз." }, { status: 502 });

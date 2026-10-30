@@ -131,3 +131,8 @@ a{color:inherit;text-decoration:none}
 @media(max-width:1080px){.main-content{grid-template-columns:1fr 1fr;gap:32px}.chat{min-height:650px}}
 @media(max-width:790px){.main-content{grid-template-columns:1fr}.chat{height:clamp(650px,calc(100dvh - 110px),900px);min-height:650px}}
 @media(max-width:520px){.chat{height:clamp(630px,calc(100dvh - 95px),820px);min-height:630px}.chat.chat-expanded{inset:0;border-radius:0}.chat-header{gap:8px}.chat-expand-button{font-size:11px;padding:8px}.chat-badge{font-size:10px}.chat-expanded .chat-messages{padding:16px 14px}.chat-expanded .chat-bottom{padding:13px}.chat-history-toggle{font-size:11px}.history-count{gap:5px;font-size:10px}}
+
+.chat-clear-button{flex-shrink:0;border:1px solid #f0dcd9;border-radius:10px;background:#fff8f7;color:#9a514b;padding:9px 12px;font-size:12px;font-weight:700}
+.chat-clear-button:hover:not(:disabled){background:#ffebe7}
+.chat-clear-button:focus-visible{outline:3px solid #ba8175;outline-offset:2px}
+@media(max-width:580px){.chat-badge{display:none}.chat-clear-button{padding:8px 9px;font-size:11px}.clear-label{display:none}.chat-clear-button span:first-child{font-size:18px}}
