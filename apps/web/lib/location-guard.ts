@@ -1,4 +1,5 @@
 import type { AgentAnswer, PublicSource } from "./openai-response";
+import { getCityProfile, KZ_CITY_PROFILES } from "./cities";
 
 /**
  * A deterministic pilot safeguard, NOT official verification of a venue.
@@ -9,28 +10,8 @@ import type { AgentAnswer, PublicSource } from "./openai-response";
  * A proper venue/location lookup (licensed places API) is still required.
  */
 const cityMatchers: ReadonlyArray<readonly [string, RegExp]> = [
-  ["Астана", /астан[аыеойу]|astana|nur.?sultan/iu],
-  ["Алматы", /алмат[аыеойуы]|almaty/iu],
-  ["Шымкент", /шымкент|shymkent/iu],
-  ["Павлодар", /павлодар|pavlodar/iu],
-  ["Караганда", /караганд|karaganda/iu],
-  ["Актобе", /актобе|ақтөбе|aktobe/iu],
-  ["Атырау", /атырау|atyrau/iu],
-  ["Актау", /актау|ақтау|aktau/iu],
-  ["Костанай", /костанай|қостанай|kostanay/iu],
-  ["Тараз", /тараз|taraz/iu],
-  ["Усть-Каменогорск", /усть.?каменогорск|oskemen|өскемен/iu],
-  ["Кызылорда", /кызылорд|қызылорд|kyzylorda/iu],
-  ["Туркестан", /туркестан|түркістан|turkistan/iu],
-  ["Кокшетау", /кокшетау|көкшетау|kokshetau/iu],
-  ["Петропавловск", /петропавловск|petropavlovsk/iu],
-  ["Семей", /семей|семея|semey/iu],
-  ["Талдыкорган", /талдыкорган|талдықорған|taldykorgan/iu],
-  ["Уральск", /уральск|uralsk/iu],
-  ["Жезказган", /жезказган|жезқазған|zhezkazgan/iu],
-  ["Конаев", /конаев|қонаев|konaev/iu],
-  ["Экибастуз", /экибастуз|екібастұз|ekibastuz/iu],
-  ["Аксу", /аксу|ақсу|aksu/iu],
+  ...KZ_CITY_PROFILES.map(city => [city.nameRu, city.mentionPattern] as const),
+  // Temporary outside-Kazakhstan signals until licensed geocoding is added.
   ["Минск", /минск|minsk|беларус|belarus/iu],
   ["Москва", /москв|moscow|moskva/iu],
   ["Санкт-Петербург", /петербург|petersburg/iu],
@@ -42,11 +23,11 @@ const cityMatchers: ReadonlyArray<readonly [string, RegExp]> = [
   ["Гомель", /гомел|gomel/iu],
   ["Варшава", /варшав|warsaw/iu],
 ];
-
 function namedCities(text: string, selectedCity: string): string[] {
+  const selectedName = getCityProfile(selectedCity)?.nameRu ?? selectedCity;
   const normalized = text.replace(/[-_./]+/g, " ");
   return cityMatchers
-    .filter(([name, matcher]) => name !== selectedCity && matcher.test(normalized))
+    .filter(([name, matcher]) => name !== selectedName && matcher.test(normalized))
     .map(([name]) => name);
 }
 
@@ -61,7 +42,8 @@ function isForeignSource(city: string, source: PublicSource): boolean {
     // A foreign artist can perform locally. A /astana/ city-section on the
     // source is stronger place evidence than a "Moscow band" title.
     // Still never trust a .by source for the Astana event pilot.
-    const selectedCity = cityMatchers.find(([name]) => name === city)?.[1];
+    const selectedName = getCityProfile(city)?.nameRu ?? city;
+    const selectedCity = cityMatchers.find(([name]) => name === selectedName)?.[1];
     const pathSegments = path.split("/").filter(Boolean);
     if (selectedCity && pathSegments.some((segment) => selectedCity.test(segment))) return false;
     return true;
@@ -135,7 +117,8 @@ export function filterLocalDiscovery(
 
   for (const block of blocks) {
     const mentions = namedCities(block, city);
-    const hasSelectedCity = cityMatchers.find(([name]) => name === city)?.[1].test(block) ?? false;
+    const selectedName = getCityProfile(city)?.nameRu ?? city;
+    const hasSelectedCity = cityMatchers.find(([name]) => name === selectedName)?.[1].test(block) ?? false;
     const linksToWrongCity = badUrls.some((url) => block.includes(url));
     // "Гастроли артистов из Москвы в Астане" is not a Moscow event.
     // With explicit local venue and no cited off-city source, keep the item.
