@@ -60,3 +60,11 @@ test("recognizes geographic follow-up questions from local context", () => {
     {role: "user", content: "Объясни сортировку массива"},
   ]), false);
 });
+
+
+test("recognizes natural leisure wording without category keywords", () => {
+  const result = filterLocalDiscovery("Астана", "Что интересного на выходных?", reply(
+    "В Минске состоится фестиваль.", [foreign],
+  ));
+  assert.equal(result.valid, false);
+});

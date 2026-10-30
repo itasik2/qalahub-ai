@@ -62,7 +62,7 @@ function isForeignSource(city: string, source: PublicSource): boolean {
 }
 
 export function isLocalDiscoveryQuery(question: string): boolean {
-  return /концерт|афиш|мероприят|спектакл|выставк|фестивал|вечерин|куда\s+(сходить|пойти)|где\s+(поесть|поужинать|позавтракать|погулять)|ресторан|кафе|кофейн|кино|дет[ьми]|досуг|маршрут|парки|парк|мастер|сантехник|электрик/iu.test(question);
+  return /концерт|афиш|мероприят|спектакл|выставк|фестивал|вечерин|что\s+интересн|чем\s+заняться|чем\s+развлеч|куда\s+(сходить|пойти|можно)|где\s+(поесть|поужинать|позавтракать|погулять)|ресторан|кафе|кофейн|кино|дет[ьми]|досуг|маршрут|парки|парк|мастер|сантехник|электрик/iu.test(question);
 }
 
 /** Short follow-up turns inherit the subject of the last discovery question. */
