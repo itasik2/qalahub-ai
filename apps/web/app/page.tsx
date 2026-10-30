@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { KZ_CITIES } from "../lib/cities";
+import { getCityProfile, KZ_CITIES } from "../lib/cities";
 import { tokenizeAssistantText } from "../lib/answer-format";
 import { groupChatTurns, summarizeQuestion } from "../lib/chat-history";
 
@@ -197,7 +197,7 @@ export default function HomePage() {
             <span>QalaHub <b>AI</b></span>
           </a>
           <div className="header-right">
-            <span className="pilot-pill"><span className="live-dot" /> Пилот · Астана</span>
+            <span className="pilot-pill"><span className="live-dot" /> {getCityProfile(city)?.coverage === "pilot" ? "Пилот" : "Экспериментальный поиск"} · {city}</span>
             <label className="city-control">
               <span>Ваш город</span>
               <select
@@ -251,7 +251,7 @@ export default function HomePage() {
             </div>
           </div>
           <p className="intro-note">
-            Начинаем с Астаны. Другие города уже можно выбрать для пробного поиска.
+            Первый пилот в Астане. В других городах идёт экспериментальный поиск с проверкой источников.
           </p>
         </section>
 

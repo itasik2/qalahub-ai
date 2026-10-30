@@ -1,4 +1,4 @@
-import { isKazakhstanCity } from "./cities";
+import { getCityProfile } from "./cities";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 export type ChatPayload = { city: string; accessCode: string; messages: ChatTurn[] };
@@ -19,7 +19,8 @@ export function parseChatPayload(input: unknown): ChatPayload {
   const city = typeof body.city === "string" ? body.city.trim() : "";
   const accessCode = typeof body.accessCode === "string" ? body.accessCode : "";
 
-  if (!isKazakhstanCity(city)) {
+  const profile = getCityProfile(city);
+  if (!profile) {
     throw new ChatInputError("Укажите корректный город Казахстана.");
   }
   if (accessCode.length > 200) {
@@ -48,5 +49,5 @@ export function parseChatPayload(input: unknown): ChatPayload {
   if (total > 16000 || messages[messages.length - 1]?.role !== "user") {
     throw new ChatInputError("Слишком длинный или некорректный диалог.");
   }
-  return { city, accessCode, messages };
+  return { city: profile.nameRu, accessCode, messages };
 }
