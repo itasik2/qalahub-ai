@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ChatInputError, parseChatPayload } from "../../../lib/chat";
 import { parseAgentAnswer } from "../../../lib/openai-response";
 import { buildAgentInstructions, createCitySearchTool, getResponseUsage } from "../../../lib/agent-request";
-import { validateLocalDiscovery } from "../../../lib/location-guard";
+import { filterLocalDiscovery, isLocalDiscoveryConversation } from "../../../lib/location-guard";
+import { collectSearchSourceUrls, countSourceMatches } from "../../../lib/source-evidence";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
         ],
         tools: [createCitySearchTool(payload.city)],
         tool_choice: "required",
+        include: ["web_search_call.action.sources"],
         max_output_tokens: 1100,
         store: false,
       }),
@@ -72,31 +74,38 @@ export async function POST(request: NextRequest) {
 
     const upstreamPayload: unknown = await upstream.json();
     const result = parseAgentAnswer(upstreamPayload);
-    const validation = validateLocalDiscovery(
+    const lastQuestion = payload.messages[payload.messages.length - 1].content;
+    // Follow-up questions like "А на следующей неделе?" retain city rules.
+    const localDiscovery = isLocalDiscoveryConversation(payload.messages);
+    const validation = filterLocalDiscovery(
       payload.city,
-      payload.messages[payload.messages.length - 1].content,
+      localDiscovery ? "Какие мероприятия и места? " + lastQuestion : lastQuestion,
       result,
     );
     if (!validation.valid) {
-      // Reject mixed-city recommendations rather than presenting false local data.
       console.warn("qalahub.chat.geography_rejected", {
         city: payload.city,
-        conflictingCityCount: validation.conflictingCities.length,
+        removedRecommendations: validation.removedRecommendations,
+        removedSources: validation.removedSources,
         missingSources: validation.missingSources,
       });
       return NextResponse.json({
-        error: validation.conflictingCities.length
-          ? "В поиске обнаружены результаты других городов. Я не буду выдавать их за мероприятия выбранного города. Попробуйте запрос ещё раз."
-          : "Не нашлось проверяемых источников по выбранному городу. Уточните запрос или повторите поиск.",
+        error: "Не удалось найти надёжные результаты по выбранному городу. Попробуйте уточнить дату, район или категорию.",
       }, { status: 422, headers: { "Cache-Control": "no-store" } });
     }
+
+    const sourcesConsulted = collectSearchSourceUrls(upstreamPayload);
     const usage = getResponseUsage(upstreamPayload);
-    // Metrics only; never log user questions, access codes or source URLs.
+    // Anonymous aggregate telemetry, no source URLs, access codes or prompts.
     if (usage) console.info("qalahub.chat.usage", {
       ...usage,
-      sourceCount: result.sources.length,
+      sourceCount: validation.answer.sources.length,
+      searchSourceCount: sourcesConsulted.length,
+      correlatedSources: countSourceMatches(validation.answer, sourcesConsulted),
+      removedRecommendations: validation.removedRecommendations,
+      removedSources: validation.removedSources,
     });
-    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(validation.answer, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("QalaHub AI request failed:", error instanceof Error ? error.name : "Unknown error");
     return NextResponse.json({ error: "Не удалось получить ответ. Попробуйте ещё раз." }, { status: 502 });
