@@ -136,3 +136,13 @@ a{color:inherit;text-decoration:none}
 .chat-clear-button:hover:not(:disabled){background:#ffebe7}
 .chat-clear-button:focus-visible{outline:3px solid #ba8175;outline-offset:2px}
 @media(max-width:580px){.chat-badge{display:none}.chat-clear-button{padding:8px 9px;font-size:11px}.clear-label{display:none}.chat-clear-button span:first-child{font-size:18px}}
+
+.map-search-actions{margin-top:16px;padding:16px;border:1px solid #dce6db;border-radius:16px;background:#f8fcf6}
+.map-search-actions p{font-size:13px;color:#365747;font-weight:750;margin:0 0 10px}
+.map-search-row{display:flex;gap:8px;flex-wrap:wrap}
+.map-search-row button{border:1px solid #c6dcbe;border-radius:12px;padding:10px 12px;background:#edf8e8;color:#2f6645;font-size:12px;font-weight:750;cursor:pointer}
+.map-search-row button:hover:not(:disabled){background:#dff1d7}
+.map-search-row button:disabled{opacity:.5;cursor:not-allowed}
+.map-search-row button:focus-visible{outline:3px solid #87b574;outline-offset:2px}
+.map-search-actions small{display:block;font-size:11px;color:#6c887a;margin-top:9px;line-height:1.45}
+@media(max-width:520px){.map-search-row button{flex:1 1 145px}}

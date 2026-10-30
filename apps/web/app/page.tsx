@@ -9,6 +9,8 @@ type Source = { title: string; url: string };
 type Citation = { startIndex: number; endIndex: number; url: string; title: string };
 type ChatMessage = { role: "user" | "assistant"; text: string; sources?: Source[]; citations?: Citation[] };
 type ChatReply = { answer?: string; sources?: Source[]; citations?: Citation[]; error?: string };
+type FoundPlace = { id: string;name: string;category:string;address:string|null;distanceMeters:number;osmUrl:string };
+type PlaceReply = {data?:FoundPlace[];error?:string};
 
 function renderAssistantText(text: string) {
   return tokenizeAssistantText(text).map((part, index) => {
@@ -146,6 +148,64 @@ export default function HomePage() {
     void ask(question);
   }
 
+  async function findMapPlaces(category: "food" | "culture") {
+    if (pending) return;
+    if (!accessCode.trim()) {
+      setError("Введите код пилота, чтобы найти места на карте.");
+      chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+      codeRef.current?.focus();
+      return;
+    }
+    const question = category === "food"
+      ? "Найди кафе и рестораны рядом с центром города"
+      : "Найди музеи и достопримечательности рядом с центром города";
+    const requestId = ++requestIdRef.current;
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    setPending(true);
+    setHistoryOpen(false);
+    setError("");
+    setText("");
+    setMessages(prev => [...prev,{role:"user",text:question}]);
+    chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+    try {
+      const response = await fetch("/api/discover/places",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        cache:"no-store",signal:controller.signal,
+        body:JSON.stringify({city,category,accessCode}),
+      });
+      const result = await response.json() as PlaceReply;
+      if (requestId !== requestIdRef.current) return;
+      if (!response.ok || !result.data) throw new Error(result.error || "Поиск мест недоступен.");
+      const title = category === "food" ? "Кафе и рестораны" : "Музеи и достопримечательности";
+      const entries = result.data.map((place,index) => {
+        const distanceKm = (place.distanceMeters / 1000).toFixed(1).replace(".",",");
+        const address = place.address ? " · " + place.address : " · адрес не указан";
+        const safeName = place.name.replaceAll("[","").replaceAll("]","").replaceAll("(","").replaceAll(")","");
+        return (index + 1) + ". [" + safeName + "](" + place.osmUrl + ")" + address + " · " + distanceKm + " км от центра";
+      });
+      const lines = [
+        "**" + title + ", " + city + " (OpenStreetMap)**",
+        result.data.length ? entries.join("\n") : "В доступных картографических данных подходящих мест не найдено.",
+        "Поиск относительно центра города, не вашего адреса. Уточняйте режим работы и цены.",
+        "Источник: [© OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright).",
+      ];
+      setMessages(prev => [...prev,{
+        role:"assistant",text:lines.join("\n\n"),
+        sources:[{title:"OpenStreetMap contributors (ODbL)",url:"https://www.openstreetmap.org/copyright"}],
+      }]);
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return;
+      setMessages(prev => prev.slice(0,-1));
+      setError(error instanceof Error ? error.message : "Не удалось найти места.");
+    } finally {
+      if (requestId === requestIdRef.current) {
+        requestControllerRef.current = null;
+        setPending(false);
+      }
+    }
+  }
+
   async function ask(question: string) {
     const query = question.trim();
     if (pending || !query) return;
@@ -269,6 +329,16 @@ export default function HomePage() {
                   <span className="suggestion-text">{item.text}</span>
                 </button>
               ))}
+            </div>
+            <div className="map-search-actions" aria-label="Поиск мест на карте">
+              <p>Реальные места из OpenStreetMap</p>
+              <div className="map-search-row">
+                <button type="button" disabled={pending}
+                  onClick={() => void findMapPlaces("food")}>◉ Кафе и рестораны</button>
+                <button type="button" disabled={pending}
+                  onClick={() => void findMapPlaces("culture")}>✦ Музеи и места</button>
+              </div>
+              <small>Поиск от центра города. Картографические данные могут быть неполными.</small>
             </div>
           </div>
           <p className="intro-note">
