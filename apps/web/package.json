@@ -7,12 +7,14 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test lib/*.test.ts"
+    "test": "node --import tsx --test lib/*.test.ts",
+    "seed:cities": "tsx scripts/seed-cities.ts"
   },
   "dependencies": {
     "next": "15.5.28",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "@neondatabase/serverless": "^1.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
