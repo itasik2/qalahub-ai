@@ -54,8 +54,17 @@ function isForeignSource(city: string, source: PublicSource): boolean {
   try {
     const url = new URL(source.url);
     if (url.hostname.toLowerCase().endsWith(".by")) return true;
-    const text = source.title + " " + decodeURIComponent(url.pathname);
-    return namedCities(text, city).length > 0;
+    const path = decodeURIComponent(url.pathname);
+    const text = source.title + " " + path;
+    const foreignCities = namedCities(text, city);
+    if (foreignCities.length === 0) return false;
+    // A foreign artist can perform locally. A /astana/ city-section on the
+    // source is stronger place evidence than a "Moscow band" title.
+    // Still never trust a .by source for the Astana event pilot.
+    const selectedCity = cityMatchers.find(([name]) => name === city)?.[1];
+    const pathSegments = path.split("/").filter(Boolean);
+    if (selectedCity && pathSegments.some((segment) => selectedCity.test(segment))) return false;
+    return true;
   } catch {
     return true;
   }

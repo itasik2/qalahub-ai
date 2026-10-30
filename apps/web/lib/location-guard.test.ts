@@ -68,3 +68,13 @@ test("recognizes natural leisure wording without category keywords", () => {
   ));
   assert.equal(result.valid, false);
 });
+
+
+test("keeps locally listed Astana performance by a Moscow artist", () => {
+  const result = filterLocalDiscovery("Астана", "Какие концерты в Астане?", reply(
+    "В Астане выступает ансамбль из Москвы.",
+    [{title:"Коллектив из Москвы",url:"https://tickets.example.kz/astana/moscow-ensemble"}],
+  ));
+  assert.equal(result.valid, true);
+  assert.equal(result.removedSources, 0);
+});
