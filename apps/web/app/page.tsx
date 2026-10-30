@@ -181,7 +181,7 @@ export default function HomePage() {
       const entries = result.data.map((place,index) => {
         const distanceKm = (place.distanceMeters / 1000).toFixed(1).replace(".",",");
         const address = place.address ? " · " + place.address : " · адрес не указан";
-        const safeName = place.name.replace(/[\\[\\]()*]/g,"");
+        const safeName = place.name.replaceAll("[","").replaceAll("]","").replaceAll("(","").replaceAll(")","");
         return (index + 1) + ". [" + safeName + "](" + place.osmUrl + ")" + address + " · " + distanceKm + " км от центра";
       });
       const lines = [
