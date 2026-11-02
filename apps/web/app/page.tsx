@@ -11,6 +11,8 @@ type ChatMessage = { role: "user" | "assistant"; text: string; sources?: Source[
 type ChatReply = { answer?: string; sources?: Source[]; citations?: Citation[]; error?: string };
 type FoundPlace = { id: string;name: string;category:string;address:string|null;distanceMeters:number;osmUrl:string };
 type PlaceReply = {data?:FoundPlace[];error?:string};
+type FoundEvent = { id:string; cityId:string;title:string;startsAt:string;address:string;sourceUrl:string;retrievedAt:string };
+type EventReply = { data?:FoundEvent[];error?:string;coverage?:string };
 
 function renderAssistantText(text: string) {
   return tokenizeAssistantText(text).map((part, index) => {
@@ -146,6 +148,65 @@ export default function HomePage() {
       return;
     }
     void ask(question);
+  }
+
+  async function findTimepadEvents() {
+    if (pending) return;
+    if (!accessCode.trim()) {
+      setError("Введите код пилота, чтобы найти мероприятия.");
+      chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+      codeRef.current?.focus();
+      return;
+    }
+    const requestId = ++requestIdRef.current;
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    setPending(true);
+    setHistoryOpen(false);
+    setError("");
+    setText("");
+    setMessages(prev=>[...prev,{role:"user",text:"Какие мероприятия опубликованы на Timepad для города " + city + " на ближайшие три недели?"}]);
+    chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+    try {
+      const response = await fetch("/api/discover/events",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({city,accessCode}),cache:"no-store",
+        signal:controller.signal,
+      });
+      const result = await response.json() as EventReply;
+      if (requestId !== requestIdRef.current) return;
+      const events = result.data;
+      if (!response.ok || !events) throw new Error(result.error || "Афиша сейчас недоступна.");
+      const timezone = getCityProfile(city)?.timezone ?? "Asia/Almaty";
+      const dateFormat = new Intl.DateTimeFormat("ru-RU",{
+        timeZone:timezone,dateStyle:"medium",timeStyle:"short",
+      });
+      const lines = events.map((event,index)=>{
+        const title = event.title.replaceAll("[","").replaceAll("]","")
+          .replaceAll("(","").replaceAll(")","");
+        const date = dateFormat.format(new Date(event.startsAt));
+        return (index+1)+". ["+title+"]("+event.sourceUrl+")"
+          +" · "+date+" · "+event.address;
+      });
+      const message = [
+        "**Мероприятия Timepad: "+city+"**",
+        lines.length ? lines.join("\n") : "В ближайшие три недели подтверждённых публикаций по этому городу не найдено.",
+        "Timepad охватывает не все события. Уточняйте программу, стоимость и наличие билетов у организатора.",
+      ].join("\n\n");
+      setMessages(prev=>[...prev,{
+        role:"assistant",text:message,
+        sources:events.slice(0,10).map(event=>({title:event.title,url:event.sourceUrl})),
+      }]);
+    } catch (reason) {
+      if (requestId !== requestIdRef.current) return;
+      setMessages(prev=>prev.slice(0,-1));
+      setError(reason instanceof Error ? reason.message : "Не удалось получить афишу.");
+    } finally {
+      if (requestId === requestIdRef.current) {
+        requestControllerRef.current = null;
+        setPending(false);
+      }
+    }
   }
 
   async function findMapPlaces(category: "food" | "culture") {
@@ -329,6 +390,14 @@ export default function HomePage() {
                   <span className="suggestion-text">{item.text}</span>
                 </button>
               ))}
+            </div>
+            <div className="map-search-actions" aria-label="Афиша с проверкой города и даты">
+              <p>Афиша по данным Timepad</p>
+              <div className="map-search-row">
+                <button type="button" disabled={pending}
+                  onClick={() => void findTimepadEvents()}>✦ Мероприятия на ближайшие 3 недели</button>
+              </div>
+              <small>Только опубликованные события с адресом, датой и ссылкой на организатора.</small>
             </div>
             <div className="map-search-actions" aria-label="Поиск мест на карте">
               <p>Реальные места из OpenStreetMap</p>
