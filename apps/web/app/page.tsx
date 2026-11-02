@@ -175,12 +175,13 @@ export default function HomePage() {
       });
       const result = await response.json() as EventReply;
       if (requestId !== requestIdRef.current) return;
-      if (!response.ok || !result.data) throw new Error(result.error || "Афиша сейчас недоступна.");
+      const events = result.data;
+      if (!response.ok || !events) throw new Error(result.error || "Афиша сейчас недоступна.");
       const timezone = getCityProfile(city)?.timezone ?? "Asia/Almaty";
       const dateFormat = new Intl.DateTimeFormat("ru-RU",{
         timeZone:timezone,dateStyle:"medium",timeStyle:"short",
       });
-      const lines = result.data.map((event,index)=>{
+      const lines = events.map((event,index)=>{
         const title = event.title.replaceAll("[","").replaceAll("]","")
           .replaceAll("(","").replaceAll(")","");
         const date = dateFormat.format(new Date(event.startsAt));
@@ -194,7 +195,7 @@ export default function HomePage() {
       ].join("\n\n");
       setMessages(prev=>[...prev,{
         role:"assistant",text:message,
-        sources:result.data.slice(0,10).map(event=>({title:event.title,url:event.sourceUrl})),
+        sources:events.slice(0,10).map(event=>({title:event.title,url:event.sourceUrl})),
       }]);
     } catch (reason) {
       if (requestId !== requestIdRef.current) return;
