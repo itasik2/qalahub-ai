@@ -5,6 +5,12 @@ import { getCityProfile, type CityProfile } from "./cities";
  * Timepad publishes the public events REST API at https://dev.timepad.ru/api/get-v1-events/.
  * Listing an event does not prove tickets are on sale or prices are in KZT.
  */
+export class TimepadApiError extends Error {
+  constructor(readonly status: number) {
+    super("Timepad API HTTP " + status);
+    this.name = "TimepadApiError";
+  }
+}
 export type TimepadEvent = {
   id: string;
   cityId: string;
@@ -105,12 +111,19 @@ export function buildTimepadUrl(city: CityProfile, now: Date): string {
 
 export async function fetchTimepadEvents(city: CityProfile): Promise<TimepadEvent[]> {
   const started = new Date();
+  // An optional server-only token can be used if Timepad requires it for
+  // this deployment. Public-event requests need no token per official docs.
+  const token = process.env.TIMEPAD_TOKEN?.trim();
+  const headers: Record<string,string> = {
+    Accept:"application/json",
+    "User-Agent":"QalaHubAI/0.1 (+https://qalahub-ai.vercel.app/)",
+  };
+  if (token) headers.Authorization = "Bearer " + token;
   const response = await fetch(buildTimepadUrl(city,started),{
-    headers:{Accept:"application/json", "User-Agent":"QalaHubAI/0.1 (+https://qalahub-ai.vercel.app/)"},
-    method:"GET", cache:"no-store", redirect:"error",
+    headers,method:"GET",cache:"no-store",redirect:"error",
     signal:AbortSignal.timeout(16000),
   });
-  if (!response.ok) throw new Error("Timepad API request failed: "+response.status);
+  if (!response.ok) throw new TimepadApiError(response.status);
   const length = Number(response.headers.get("content-length") || 0);
   if(length > 900_000) throw new Error("Timepad response too large");
   const content = await response.text();
