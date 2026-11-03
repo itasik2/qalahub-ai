@@ -12,7 +12,7 @@ test("only allows supported categories and Kazakhstan coordinates", () => {
 test("builds a fixed, bounded query with no arbitrary user query injection", () => {
   const q=buildOverpassQuery("food",51.1801,71.44598);
   assert.match(q,/2700,51\.180100,71\.445980/);
-  assert.match(q,/\btimeout:18/);
+  assert.match(q,/\btimeout:10/);
   assert.match(q,/out center 100/);
   assert.doesNotMatch(q,/around:50000/);
 });

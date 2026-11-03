@@ -293,7 +293,7 @@ export default function HomePage() {
     chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
 
     try {
-      let mapError: string | null = null;
+      let invalidRequest = false;
       let noMapResults = false;
       try {
         const response = await fetch("/api/discover/places",{
@@ -304,6 +304,7 @@ export default function HomePage() {
         const result = await response.json() as PlaceReply;
         if (requestId !== requestIdRef.current) return;
         if ([400,401,403].includes(response.status)) {
+          invalidRequest = true;
           throw new Error(result.error || "Проверьте код доступа и город.");
         }
         if (response.ok && Array.isArray(result.data) && result.data.length) {
@@ -328,14 +329,11 @@ export default function HomePage() {
         }
         if (response.ok && Array.isArray(result.data) && result.data.length === 0) {
           noMapResults = true;
-        } else {
-          mapError = result.error || "Карта не вернула результаты.";
         }
       } catch (reason) {
         if (controller.signal.aborted || requestId !== requestIdRef.current) return;
         // Input and authorization failures must not trigger a paid web search.
-        if (reason instanceof Error && /код доступа|выберите город|категори/iu.test(reason.message)) throw reason;
-        mapError = reason instanceof Error ? reason.message : "Карта не ответила.";
+        if (invalidRequest) throw reason;
       }
 
       if (controller.signal.aborted || requestId !== requestIdRef.current) return;
