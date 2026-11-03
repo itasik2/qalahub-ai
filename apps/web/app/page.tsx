@@ -154,10 +154,14 @@ export default function HomePage() {
     if (pending) return;
     if (!accessCode.trim()) {
       setError("Введите код пилота, чтобы найти мероприятия.");
-      chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+      chatRef.current?.scrollIntoView({ behavior:"smooth", block:"center" });
       codeRef.current?.focus();
       return;
     }
+
+    const question = "Найди актуальные мероприятия, концерты, спектакли и выставки в городе "
+      + city + ", Казахстан, в ближайшие три недели. Укажи точные даты, место проведения "
+      + "и проверяемые ссылки на афишу/организатора. Не предлагай другие города.";
     const requestId = ++requestIdRef.current;
     const controller = new AbortController();
     requestControllerRef.current = controller;
@@ -165,41 +169,98 @@ export default function HomePage() {
     setHistoryOpen(false);
     setError("");
     setText("");
-    setMessages(prev=>[...prev,{role:"user",text:"Какие мероприятия опубликованы на Timepad для города " + city + " на ближайшие три недели?"}]);
-    chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+    const next: ChatMessage[] = [...messages, { role:"user", text:question }];
+    setMessages(next);
+    chatRef.current?.scrollIntoView({ behavior:"smooth", block:"center" });
+
     try {
-      const response = await fetch("/api/discover/events",{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({city,accessCode}),cache:"no-store",
+      let timepadEmpty = false;
+      let timepadError: string | null = null;
+      let timepadForbidden = false;
+
+      try {
+        const response = await fetch("/api/discover/events", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({city,accessCode}),cache:"no-store",
+          signal:controller.signal,
+        });
+        const data = await response.json() as EventReply;
+        if (requestId !== requestIdRef.current) return;
+
+        // An invalid pilot code must not trigger a second paid API request.
+        if (response.status === 400 || response.status === 401 || response.status === 403) {
+          timepadForbidden = true;
+          timepadError = data.error || "Не удалось подтвердить доступ к афише.";
+        } else if (response.ok && Array.isArray(data.data) && data.data.length) {
+          const events = data.data;
+          const timezone = getCityProfile(city)?.timezone ?? "Asia/Almaty";
+          const dateFormat = new Intl.DateTimeFormat("ru-RU", {
+            timeZone:timezone, dateStyle:"medium",timeStyle:"short",
+          });
+          const lines = events.map((event,index)=>{
+            const title = event.title.replaceAll("[","").replaceAll("]","")
+              .replaceAll("(","").replaceAll(")","");
+            return (index+1)+". ["+title+"]("+event.sourceUrl+")"
+              +" · "+dateFormat.format(new Date(event.startsAt))+" · "+event.address;
+          });
+          setMessages(previous=>[...previous,{
+            role:"assistant",
+            text:[
+              "**Мероприятия Timepad: "+city+"**", lines.join("\n"),
+              "Timepad охватывает не все события. Уточняйте программу, стоимость и наличие билетов у организатора.",
+            ].join("\n\n"),
+            sources:events.slice(0,10).map(event=>({title:event.title,url:event.sourceUrl})),
+          }]);
+          return;
+        } else if (response.ok && Array.isArray(data.data) && !data.data.length) {
+          timepadEmpty = true;
+        } else {
+          timepadError = data.error || "Источник Timepad не ответил.";
+        }
+      } catch (reason) {
+        if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+        timepadError = reason instanceof Error ? reason.message : "Источник Timepad не ответил.";
+      }
+
+      if (timepadForbidden) throw new Error(timepadError || "Проверьте код доступа.");
+      if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+
+      // Fail over to the existing city-guarded OpenAI web search. No fabricated
+      // events are inserted into the database; sources remain clickable.
+      const aiResponse = await fetch("/api/chat", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        cache:"no-store",
         signal:controller.signal,
+        body:JSON.stringify({
+          city,
+          accessCode,
+          messages:next.slice(-8).map(message=>({
+            role:message.role,
+            content:message.text.slice(0,message.role==="assistant" ? 3000 : 1400),
+          })),
+        }),
       });
-      const result = await response.json() as EventReply;
+      const aiResult = await aiResponse.json() as ChatReply;
       if (requestId !== requestIdRef.current) return;
-      const events = result.data;
-      if (!response.ok || !events) throw new Error(result.error || "Афиша сейчас недоступна.");
-      const timezone = getCityProfile(city)?.timezone ?? "Asia/Almaty";
-      const dateFormat = new Intl.DateTimeFormat("ru-RU",{
-        timeZone:timezone,dateStyle:"medium",timeStyle:"short",
-      });
-      const lines = events.map((event,index)=>{
-        const title = event.title.replaceAll("[","").replaceAll("]","")
-          .replaceAll("(","").replaceAll(")","");
-        const date = dateFormat.format(new Date(event.startsAt));
-        return (index+1)+". ["+title+"]("+event.sourceUrl+")"
-          +" · "+date+" · "+event.address;
-      });
-      const message = [
-        "**Мероприятия Timepad: "+city+"**",
-        lines.length ? lines.join("\n") : "В ближайшие три недели подтверждённых публикаций по этому городу не найдено.",
-        "Timepad охватывает не все события. Уточняйте программу, стоимость и наличие билетов у организатора.",
-      ].join("\n\n");
-      setMessages(prev=>[...prev,{
-        role:"assistant",text:message,
-        sources:events.slice(0,10).map(event=>({title:event.title,url:event.sourceUrl})),
+      if (!aiResponse.ok || !aiResult.answer) {
+        throw new Error(aiResult.error
+          ? "Timepad не дал подходящей афиши; резервный поиск: "+aiResult.error
+          : "Не удалось выполнить резервный веб-поиск мероприятий.");
+      }
+
+      const notice = timepadEmpty
+        ? "**В Timepad нет подходящих публикаций. Ниже результаты веб-поиска для города "+city+".**"
+        : "**Timepad сейчас недоступен. Выполнен резервный веб-поиск для города "+city+".**";
+      setMessages(previous=>[...previous,{
+        role:"assistant",
+        text:notice+"\n\n"+aiResult.answer,
+        sources:aiResult.sources ?? [],
+        citations:[],
       }]);
     } catch (reason) {
       if (requestId !== requestIdRef.current) return;
-      setMessages(prev=>prev.slice(0,-1));
+      setMessages(previous=>previous.slice(0,-1));
       setError(reason instanceof Error ? reason.message : "Не удалось получить афишу.");
     } finally {
       if (requestId === requestIdRef.current) {

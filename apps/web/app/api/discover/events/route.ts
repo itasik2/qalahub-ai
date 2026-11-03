@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { unstable_cache } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { getCityProfile } from "../../../../lib/cities";
-import { fetchTimepadEvents } from "../../../../lib/timepad-events";
+import { fetchTimepadEvents, TimepadApiError } from "../../../../lib/timepad-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,10 +53,15 @@ export async function POST(request: NextRequest) {
       coverage:"Только события, опубликованные на Timepad. Это не полная афиша города.",
       notice:"Город, дата и адрес сверены с данными организатора на Timepad. Наличие билетов и цены не проверены.",
     },{headers:{"Cache-Control":"no-store"}});
-  } catch {
-    console.error("qalahub.events.timepad_unavailable");
+  } catch (reason) {
+    // Never log access codes, provider tokens, external event content or URLs.
+    const failure = reason instanceof TimepadApiError
+      ? "upstream_http_" + reason.status
+      : reason instanceof SyntaxError ? "upstream_invalid_json" : "upstream_network_or_format";
+    console.error("qalahub.events.timepad_unavailable", { failure, cityId:city.id });
     return NextResponse.json({
       error:"Источник афиши Timepad сейчас недоступен. Можно попробовать обычный ИИ-поиск.",
+      fallbackAvailable:true,
     },{status:503,headers:{"Cache-Control":"no-store"}});
   }
 }
