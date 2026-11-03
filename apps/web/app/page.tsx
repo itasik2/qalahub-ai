@@ -273,14 +273,14 @@ export default function HomePage() {
   async function findMapPlaces(category: "food" | "culture") {
     if (pending) return;
     if (!accessCode.trim()) {
-      setError("Введите код пилота, чтобы найти места на карте.");
+      setError("Введите код пилота, чтобы найти места.");
       chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
       codeRef.current?.focus();
       return;
     }
     const question = category === "food"
-      ? "Найди кафе и рестораны рядом с центром города"
-      : "Найди музеи и достопримечательности рядом с центром города";
+      ? "Найди кафе и рестораны в городе " + city + ", Казахстан. Укажи адрес, ссылку на источник и не придумывай часы работы, цены или отзывы."
+      : "Куда сходить в музеи и к достопримечательностям в городе " + city + ", Казахстан? Укажи адрес и проверяемую ссылку на источник.";
     const requestId = ++requestIdRef.current;
     const controller = new AbortController();
     requestControllerRef.current = controller;
@@ -288,38 +288,86 @@ export default function HomePage() {
     setHistoryOpen(false);
     setError("");
     setText("");
-    setMessages(prev => [...prev,{role:"user",text:question}]);
+    const next: ChatMessage[] = [...messages,{role:"user",text:question}];
+    setMessages(next);
     chatRef.current?.scrollIntoView({behavior:"smooth",block:"center"});
+
     try {
-      const response = await fetch("/api/discover/places",{
-        method:"POST",headers:{"Content-Type":"application/json"},
-        cache:"no-store",signal:controller.signal,
-        body:JSON.stringify({city,category,accessCode}),
+      let invalidRequest = false;
+      let noMapResults = false;
+      try {
+        const response = await fetch("/api/discover/places",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          cache:"no-store",signal:controller.signal,
+          body:JSON.stringify({city,category,accessCode}),
+        });
+        const result = await response.json() as PlaceReply;
+        if (requestId !== requestIdRef.current) return;
+        if ([400,401,403].includes(response.status)) {
+          invalidRequest = true;
+          throw new Error(result.error || "Проверьте код доступа и город.");
+        }
+        if (response.ok && Array.isArray(result.data) && result.data.length) {
+          const title = category === "food" ? "Кафе и рестораны" : "Музеи и достопримечательности";
+          const entries = result.data.map((place,index) => {
+            const distanceKm = (place.distanceMeters / 1000).toFixed(1).replace(".",",");
+            const address = place.address ? " · " + place.address : " · адрес не указан";
+            const safeName = place.name.replaceAll("[","").replaceAll("]","")
+              .replaceAll("(","").replaceAll(")","");
+            return (index+1)+". ["+safeName+"]("+place.osmUrl+")"+address+" · "+distanceKm+" км от центра";
+          });
+          setMessages(previous => [...previous,{
+            role:"assistant",
+            text:[
+              "**"+title+", "+city+" (OpenStreetMap)**",entries.join("\n"),
+              "Поиск относительно центра города, не вашего адреса. Уточняйте режим работы и цены.",
+              "Источник: [© OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright).",
+            ].join("\n\n"),
+            sources:[{title:"OpenStreetMap contributors (ODbL)",url:"https://www.openstreetmap.org/copyright"}],
+          }]);
+          return;
+        }
+        if (response.ok && Array.isArray(result.data) && result.data.length === 0) {
+          noMapResults = true;
+        }
+      } catch (reason) {
+        if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+        // Input and authorization failures must not trigger a paid web search.
+        if (invalidRequest) throw reason;
+      }
+
+      if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+      const response = await fetch("/api/chat",{
+        method:"POST",headers:{"Content-Type":"application/json"},cache:"no-store",
+        signal:controller.signal,
+        body:JSON.stringify({
+          city,accessCode,
+          messages:next.slice(-8).map(message=>({
+            role:message.role,
+            content:message.text.slice(0,message.role==="assistant"?3000:1400),
+          })),
+        }),
       });
-      const result = await response.json() as PlaceReply;
+      const result = await response.json() as ChatReply;
       if (requestId !== requestIdRef.current) return;
-      if (!response.ok || !result.data) throw new Error(result.error || "Поиск мест недоступен.");
-      const title = category === "food" ? "Кафе и рестораны" : "Музеи и достопримечательности";
-      const entries = result.data.map((place,index) => {
-        const distanceKm = (place.distanceMeters / 1000).toFixed(1).replace(".",",");
-        const address = place.address ? " · " + place.address : " · адрес не указан";
-        const safeName = place.name.replaceAll("[","").replaceAll("]","").replaceAll("(","").replaceAll(")","");
-        return (index + 1) + ". [" + safeName + "](" + place.osmUrl + ")" + address + " · " + distanceKm + " км от центра";
-      });
-      const lines = [
-        "**" + title + ", " + city + " (OpenStreetMap)**",
-        result.data.length ? entries.join("\n") : "В доступных картографических данных подходящих мест не найдено.",
-        "Поиск относительно центра города, не вашего адреса. Уточняйте режим работы и цены.",
-        "Источник: [© OpenStreetMap contributors, ODbL](https://www.openstreetmap.org/copyright).",
-      ];
-      setMessages(prev => [...prev,{
-        role:"assistant",text:lines.join("\n\n"),
-        sources:[{title:"OpenStreetMap contributors (ODbL)",url:"https://www.openstreetmap.org/copyright"}],
+      if (!response.ok || !result.answer) {
+        throw new Error(result.error
+          ? "Не удалось найти подтверждённые местные варианты: "+result.error
+          : "Карта и резервный веб-поиск сейчас недоступны.");
+      }
+      const banner = noMapResults
+        ? "**Карта не нашла подходящих мест. Ниже резервный веб-поиск по городу "+city+".**"
+        : "**Картографический сервер недоступен. Ниже резервный веб-поиск по городу "+city+".**";
+      setMessages(previous=>[...previous,{
+        role:"assistant",
+        text:banner+"\n\n"+result.answer,
+        sources:result.sources ?? [],
+        citations:[],
       }]);
-    } catch (error) {
+    } catch (reason) {
       if (requestId !== requestIdRef.current) return;
-      setMessages(prev => prev.slice(0,-1));
-      setError(error instanceof Error ? error.message : "Не удалось найти места.");
+      setMessages(previous=>previous.slice(0,-1));
+      setError(reason instanceof Error ? reason.message : "Не удалось найти места.");
     } finally {
       if (requestId === requestIdRef.current) {
         requestControllerRef.current = null;

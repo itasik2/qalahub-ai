@@ -7,6 +7,20 @@
  * Attribution: © OpenStreetMap contributors, ODbL.
  */
 export type PlaceKind = "food" | "culture";
+
+/** Independent publicly documented Overpass providers; no arbitrary URLs. */
+export const OVERPASS_SERVERS = [
+  { id:"private-coffee", endpoint:"https://overpass.private.coffee/api/interpreter" },
+  { id:"fossgis", endpoint:"https://overpass-api.de/api/interpreter" },
+] as const;
+
+export class OverpassLookupError extends Error {
+  constructor(readonly reasons: readonly string[]) {
+    super("Both public map providers are unavailable");
+    this.name = "OverpassLookupError";
+  }
+}
+
 export type OsmPlace = {
   id: string;
   name: string;
@@ -39,7 +53,7 @@ export function isValidCenter(lat: number, lon: number): boolean {
 export function buildOverpassQuery(kind: PlaceKind, lat: number, lon: number): string {
   if (!isValidCenter(lat, lon) || !selectors[kind]) throw new Error("Invalid location");
   const radius = kind === "food" ? 2700 : 3800;
-  return '[out:json][timeout:18];nwr' + selectors[kind]
+  return '[out:json][timeout:10];nwr' + selectors[kind]
     + '(around:' + radius + ',' + lat.toFixed(6) + ',' + lon.toFixed(6) + ');out center 100;';
 }
 
@@ -96,23 +110,53 @@ export function normalizeOsmPlaces(
   return result.sort((a,b)=>a.distanceMeters - b.distanceMeters).slice(0,14);
 }
 
+/**
+ * Failover is attempted only on failure, not to combine two provider datasets.
+ * Each request has an 11s deadline. Even two slow mirrors fit Vercel's 35s
+ * function budget when paired with the city's DB lookup.
+ */
 export async function fetchOverpassPlaces(
   kind: PlaceKind, lat: number, lon: number,
+  request: typeof fetch = fetch,
 ): Promise<OsmPlace[]> {
   const q = buildOverpassQuery(kind,lat,lon);
-  const response = await fetch("https://overpass-api.de/api/interpreter",{
-    method:"POST",
-    headers:{
-      "Content-Type":"application/x-www-form-urlencoded",
-      "User-Agent":"QalaHubAI/0.1 (+https://qalahub-ai.vercel.app/)",
-      Accept:"application/json",
-    },
-    body:new URLSearchParams({data:q}),
-    cache:"no-store",
-    signal:AbortSignal.timeout(19000),
-  });
-  if (!response.ok) throw new Error("Overpass service unavailable: " + response.status);
-  const body = await response.text();
-  if(body.length > 800000) throw new Error("Overpass response too large");
-  return normalizeOsmPlaces(JSON.parse(body),kind,lat,lon);
+  const failures: string[] = [];
+  for (const server of OVERPASS_SERVERS) {
+    try {
+      const response = await request(server.endpoint,{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/x-www-form-urlencoded",
+          "User-Agent":"QalaHubAI/0.1 (+https://qalahub-ai.vercel.app/)",
+          Accept:"application/json",
+        },
+        body:new URLSearchParams({data:q}),
+        cache:"no-store",
+        signal:AbortSignal.timeout(11000),
+      });
+      if (!response.ok) {
+        failures.push(server.id+":http_"+response.status);
+        continue;
+      }
+      if (Number(response.headers.get("content-length") || 0) > 800000) {
+        failures.push(server.id+":too_large");
+        continue;
+      }
+      const body = await response.text();
+      if (body.length > 800000) {
+        failures.push(server.id+":too_large");
+        continue;
+      }
+      const parsed: unknown = JSON.parse(body);
+      // A successful but empty response is valid, not a provider failure.
+      return normalizeOsmPlaces(parsed,kind,lat,lon);
+    } catch (reason) {
+      const code = reason instanceof SyntaxError ? "bad_json"
+        : reason instanceof Error && /timeout|abort/iu.test(reason.name) ? "timeout"
+        : reason instanceof Error && /Invalid Overpass/iu.test(reason.message) ? "invalid_payload"
+        : "network";
+      failures.push(server.id+":"+code);
+    }
+  }
+  throw new OverpassLookupError(failures);
 }

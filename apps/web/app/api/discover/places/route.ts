@@ -3,7 +3,7 @@ import { unstable_cache } from "next/cache";
 import { NextRequest, NextResponse } from "next/server";
 import { cityDatabase } from "../../../../lib/database";
 import { getCityProfile } from "../../../../lib/cities";
-import { fetchOverpassPlaces, isValidCenter, parsePlaceKind, type PlaceKind } from "../../../../lib/osm-places";
+import { fetchOverpassPlaces, isValidCenter, parsePlaceKind, OverpassLookupError, type PlaceKind } from "../../../../lib/osm-places";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,10 +74,15 @@ export async function POST(request: NextRequest) {
       attribution:CREDITS,
       notice:"Адрес, часы работы, цены и актуальность заведений требуют уточнения.",
     }, {headers:{"Cache-Control":"no-store"}});
-  } catch {
-    console.error("qalahub.osm.places_failed");
+  } catch (reason) {
+    // Only provider IDs and generic error categories: no user prompts or secrets.
+    console.error("qalahub.osm.places_failed", {
+      cityId:city.id,
+      failures:reason instanceof OverpassLookupError ? reason.reasons : ["database_or_unexpected"],
+    });
     return NextResponse.json({
-      error:"Источник карты сейчас недоступен. Попробуйте позднее или используйте ИИ-поиск.",
+      error:"Картографический источник временно недоступен.",
+      fallbackAvailable:true,
     }, {status:503,headers:{"Cache-Control":"no-store"}});
   }
 }
